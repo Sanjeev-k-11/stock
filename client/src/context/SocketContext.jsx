@@ -19,7 +19,7 @@ export function SocketProvider({ children }) {
   const getSocketUrl = () => {
     const apiUrl = import.meta.env.VITE_API_URL || '';
     if (apiUrl.startsWith('http')) {
-      return apiUrl.replace('/api', '');
+      return apiUrl.replace(/\/api\/?$/, '').replace(/\/$/, '');
     }
     // Default to localhost:5000 in development
     return window.location.hostname === 'localhost' ? 'http://localhost:5000' : window.location.origin;
