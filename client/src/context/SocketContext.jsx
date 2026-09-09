@@ -28,12 +28,12 @@ export function SocketProvider({ children }) {
   useEffect(() => {
     const socketUrl = getSocketUrl();
     const socket = io(socketUrl, {
-      transports: ['websocket', 'polling'],
+      transports: ['polling', 'websocket'],
       reconnection: true,
       reconnectionAttempts: Infinity,
       reconnectionDelay: 1000,
       reconnectionDelayMax: 5000,
-      timeout: 10000
+      timeout: 20000
     });
 
     socketRef.current = socket;

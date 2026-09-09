@@ -10,11 +10,11 @@ export default function LiveIndicator({ className = '' }) {
   let badgeBorder = 'border-amber-200/80 bg-amber-50/70 text-amber-800';
 
   if (isConnected) {
-    if (secondsAgo <= 20) {
+    if (secondsAgo <= 25) {
       statusText = `Live • updated ${secondsAgo}s ago`;
       dotColor = 'bg-emerald-500 animate-pulse';
       badgeBorder = 'border-emerald-200/80 bg-emerald-50/70 text-emerald-800';
-    } else if (secondsAgo <= 45) {
+    } else if (secondsAgo <= 60) {
       statusText = `Live • ${secondsAgo}s ago`;
       dotColor = 'bg-amber-500';
       badgeBorder = 'border-amber-200/80 bg-amber-50/70 text-amber-800';
@@ -24,9 +24,9 @@ export default function LiveIndicator({ className = '' }) {
       badgeBorder = 'border-slate-200 bg-slate-50 text-slate-600';
     }
   } else {
-    statusText = 'Disconnected • Reconnecting';
-    dotColor = 'bg-rose-500 animate-ping';
-    badgeBorder = 'border-rose-200 bg-rose-50 text-rose-700';
+    statusText = 'Connecting • Live Stream';
+    dotColor = 'bg-amber-400 animate-pulse';
+    badgeBorder = 'border-amber-200/80 bg-amber-50/80 text-amber-800';
   }
 
   return (
