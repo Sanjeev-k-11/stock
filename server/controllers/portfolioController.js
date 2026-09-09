@@ -213,19 +213,19 @@ async function addTrade(req, res) {
           'INSERT INTO stocks (symbol, company_name, sector, market_cap, is_gsm_asm) VALUES (?, ?, ?, ?, ?)',
           [liveData.symbol, liveData.company_name, liveData.sector, liveData.market_cap, false]
         );
-        stockId = ins.insertId;
+        stockId = (ins && ins[0] && ins[0].id) ? ins[0].id : (ins?.insertId || 0);
       } else {
         const [ins] = await pool.query(
           'INSERT INTO stocks (symbol, company_name, sector, market_cap, is_gsm_asm) VALUES (?, ?, ?, ?, ?)',
           [cleanSymbol, cleanSymbol, 'Indian Equities', 50000000000, false]
         );
-        stockId = ins.insertId;
+        stockId = (ins && ins[0] && ins[0].id) ? ins[0].id : (ins?.insertId || 0);
       }
     } else {
       stockId = stockRows[0].id;
     }
 
-    const [insertRes] = await pool.query(
+    const [insertRows, insertHeader] = await pool.query(
       `INSERT INTO broker_holdings 
         (user_id, stock_id, broker_name, trade_type, buy_price, quantity, buy_date, target_price, stop_loss, status, notes)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'holding', ?)`,
@@ -243,10 +243,12 @@ async function addTrade(req, res) {
       ]
     );
 
+    const insertedHoldingId = (insertRows && insertRows[0] && insertRows[0].id) ? insertRows[0].id : (insertHeader?.insertId || insertRows?.insertId || Date.now());
+
     return res.status(201).json({
       success: true,
       message: `Successfully logged purchase of ${numQty} shares of ${cleanSymbol} from ${broker_name}!`,
-      data: { id: insertRes.insertId, stock_id: stockId, symbol: cleanSymbol }
+      data: { id: insertedHoldingId, stock_id: stockId, symbol: cleanSymbol }
     });
   } catch (err) {
     console.error('Error adding broker trade:', err);

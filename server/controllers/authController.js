@@ -64,19 +64,20 @@ async function signup(req, res) {
       });
     }
 
-    // MySQL
+    // PostgreSQL / Database Insert
     const pool = getPool();
     const [existing] = await pool.query('SELECT id FROM users WHERE email = ?', [normalizedEmail]);
-    if (existing.length > 0) {
+    if (existing && existing.length > 0) {
       return res.status(400).json({ success: false, message: 'Email already registered. Please login.' });
     }
 
-    const [result] = await pool.query(
+    const [rows, header] = await pool.query(
       'INSERT INTO users (name, email, password_hash) VALUES (?, ?, ?)',
       [name.trim(), normalizedEmail, passwordHash]
     );
 
-    const user = { id: result.insertId, name: name.trim(), email: normalizedEmail };
+    const newId = (rows && rows[0] && rows[0].id) ? rows[0].id : (header?.insertId || rows?.insertId || Date.now());
+    const user = { id: newId, name: name.trim(), email: normalizedEmail };
     const tokens = generateTokens(user);
 
     return res.status(201).json({

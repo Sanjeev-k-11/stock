@@ -125,7 +125,7 @@ async function createTrade(req, res) {
       VALUES (?, ?, ?, ?, ?, ?, NOW(), 'open', 0.00)
     `, [tradeRecord.user_id, tradeRecord.stock_id, tradeRecord.entry_price, tradeRecord.stop_loss, tradeRecord.target1, tradeRecord.target2]);
 
-    tradeRecord.id = result.insertId;
+    tradeRecord.id = (result && result[0] && result[0].id) ? result[0].id : (result?.insertId || Date.now());
     return res.status(201).json({ success: true, message: 'Paper trade entered successfully!', data: tradeRecord });
   } catch (err) {
     console.error('createTrade error:', err);

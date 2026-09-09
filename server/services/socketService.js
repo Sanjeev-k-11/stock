@@ -27,9 +27,11 @@ function initSocket(httpServer) {
       origin: '*',
       methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS']
     },
-    pingInterval: 10000,
-    pingTimeout: 5000,
-    transports: ['websocket', 'polling']
+    pingInterval: 25000,
+    pingTimeout: 60000,
+    connectTimeout: 45000,
+    transports: ['polling', 'websocket'],
+    allowUpgrades: true
   });
 
   io.on('connection', (socket) => {

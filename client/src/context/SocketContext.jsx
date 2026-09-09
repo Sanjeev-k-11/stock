@@ -16,14 +16,10 @@ export function SocketProvider({ children }) {
   const batchedUpdatesRef = useRef({});
   const rafHandleRef = useRef(null);
 
-  // Determine socket connection URL
+  // Determine socket connection URL dynamically
   const getSocketUrl = () => {
-    const apiUrl = import.meta.env.VITE_API_URL || 'https://stock-otz5.onrender.com';
-    if (apiUrl.startsWith('http')) {
-      return apiUrl.replace(/\/api\/?$/, '').replace(/\/$/, '');
-    }
-    // Default to Render URL in production or localhost in local dev
-    return window.location.hostname === 'localhost' ? 'http://localhost:5000' : 'https://stock-otz5.onrender.com';
+    const envUrl = import.meta.env.VITE_API_URL || 'https://stock-otz5.onrender.com';
+    return envUrl.replace(/\/api\/?$/, '').replace(/\/$/, '');
   };
 
   useEffect(() => {
@@ -32,9 +28,9 @@ export function SocketProvider({ children }) {
       transports: ['polling', 'websocket'],
       reconnection: true,
       reconnectionAttempts: Infinity,
-      reconnectionDelay: 1000,
-      reconnectionDelayMax: 5000,
-      timeout: 20000
+      reconnectionDelay: 2000,
+      reconnectionDelayMax: 10000,
+      timeout: 30000
     });
 
     socketRef.current = socket;
