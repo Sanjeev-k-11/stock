@@ -17,12 +17,12 @@ export function SocketProvider({ children }) {
 
   // Determine socket connection URL
   const getSocketUrl = () => {
-    const apiUrl = import.meta.env.VITE_API_URL || '';
+    const apiUrl = import.meta.env.VITE_API_URL || 'https://stock-otz5.onrender.com';
     if (apiUrl.startsWith('http')) {
       return apiUrl.replace(/\/api\/?$/, '').replace(/\/$/, '');
     }
-    // Default to localhost:5000 in development
-    return window.location.hostname === 'localhost' ? 'http://localhost:5000' : window.location.origin;
+    // Default to Render URL in production or localhost in local dev
+    return window.location.hostname === 'localhost' ? 'http://localhost:5000' : 'https://stock-otz5.onrender.com';
   };
 
   useEffect(() => {
