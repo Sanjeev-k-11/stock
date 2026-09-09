@@ -92,12 +92,11 @@ function getPoolConfig() {
   const databaseUrl = process.env.DATABASE_URL;
 
   if (databaseUrl) {
-    // If connecting directly to Supabase, handle special characters and poolers
     try {
       return {
         connectionString: databaseUrl,
         ssl: { rejectUnauthorized: false },
-        max: 10,
+        max: 5,
         idleTimeoutMillis: 30000,
         connectionTimeoutMillis: 10000
       };
@@ -110,7 +109,7 @@ function getPoolConfig() {
   const user = process.env.DB_USER || 'postgres.otegddkvcptkiqfchpjx';
   const password = process.env.DB_PASSWORD || 'Kumar@2004@h3';
   const database = process.env.DB_NAME || 'postgres';
-  const port = Number(process.env.DB_PORT || 5432);
+  const port = Number(process.env.DB_PORT || 6543);
 
   return {
     host,
@@ -119,7 +118,7 @@ function getPoolConfig() {
     database,
     port,
     ssl: { rejectUnauthorized: false },
-    max: 10,
+    max: 5,
     idleTimeoutMillis: 30000,
     connectionTimeoutMillis: 10000
   };
@@ -129,6 +128,11 @@ async function initDB() {
   try {
     const config = getPoolConfig();
     pgPool = new Pool(config);
+
+    // Prevent uncaught errors on idle backend connections
+    pgPool.on('error', (err) => {
+      console.warn('[DB POOL WARN] Unexpected idle client error:', err.message);
+    });
 
     // Test connection
     const client = await pgPool.connect();

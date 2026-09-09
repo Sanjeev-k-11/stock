@@ -148,9 +148,33 @@ async function runLiveScanCycle() {
         }
       }
     } else {
-      // MySQL Real Live NSE Data Pipeline
+      // Live Market Data Pipeline with Bulk Prefetch
       const pool = getPool();
-      const [dbStocks] = await pool.query('SELECT * FROM stocks');
+      
+      const [
+        [dbStocks],
+        [dbFundamentals],
+        [dbIndicators],
+        [dbPrices]
+      ] = await Promise.all([
+        pool.query('SELECT * FROM stocks'),
+        pool.query('SELECT * FROM stock_fundamentals'),
+        pool.query('SELECT * FROM stock_indicators'),
+        pool.query(`
+          SELECT DISTINCT ON (stock_id) id, stock_id, timestamp, open, high, low, close, volume 
+          FROM stock_prices 
+          ORDER BY stock_id, timestamp DESC
+        `)
+      ]);
+
+      const fundMap = new Map();
+      dbFundamentals.forEach(f => fundMap.set(f.stock_id, f));
+
+      const indMap = new Map();
+      dbIndicators.forEach(i => indMap.set(i.stock_id, i));
+
+      const priceMap = new Map();
+      dbPrices.forEach(p => priceMap.set(p.stock_id, p));
       
       // Filter out symbols currently in failure backoff
       const eligibleSymbols = NSE_SYMBOLS.filter(item => {
@@ -167,7 +191,6 @@ async function runLiveScanCycle() {
         const res = results[i];
 
         if (res.status === 'fulfilled' && res.value) {
-          // Success: reset failure counter
           failureCounts.set(item.symbol, 0);
           backoffUntil.delete(item.symbol);
 
@@ -175,88 +198,86 @@ async function runLiveScanCycle() {
           let stock = dbStocks.find(s => s.symbol === liveData.symbol);
 
           if (!stock) {
-            // Auto-insert missing stock
-            const [ins] = await pool.query(
-              'INSERT INTO stocks (symbol, company_name, sector, market_cap, is_gsm_asm) VALUES (?, ?, ?, ?, ?)',
-              [liveData.symbol, liveData.company_name, liveData.sector, liveData.market_cap, false]
-            );
-            const stockId = ins.insertId;
-            stock = { id: stockId, symbol: liveData.symbol, company_name: liveData.company_name, sector: liveData.sector, market_cap: liveData.market_cap, is_gsm_asm: 0 };
-            
-            const f = liveData.fundamentals;
-            await pool.query(
-              'INSERT INTO stock_fundamentals (stock_id, promoter_holding, promoter_holding_trend, debt_to_equity, earnings_growth_yoy, earnings_growth_qoq, avg_daily_delivery_pct) VALUES (?, ?, ?, ?, ?, ?, ?)',
-              [stockId, f.promoter_holding, f.promoter_holding_trend, f.debt_to_equity, f.earnings_growth_yoy, f.earnings_growth_qoq, f.avg_daily_delivery_pct]
-            );
-            
-            const ind = liveData.indicators;
-            await pool.query(
-              'INSERT INTO stock_indicators (stock_id, timestamp, rsi, macd, macd_signal, ema20, ema50, ema200, atr, adx, obv, volume_trend, support_level, resistance_level) VALUES (?, NOW(), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
-              [stockId, ind.rsi, ind.macd, ind.macd_signal, ind.ema20, ind.ema50, ind.ema200, ind.atr, ind.adx, ind.obv, ind.volume_trend, ind.support_level, ind.resistance_level]
-            );
-
-            for (const h of liveData.candles) {
-              await pool.query(
-                'INSERT INTO stock_prices (stock_id, timestamp, open, high, low, close, volume) VALUES (?, ?, ?, ?, ?, ?, ?)',
-                [stockId, new Date(h.timestamp), h.open, h.high, h.low, h.close, h.volume]
+            try {
+              const [ins] = await pool.query(
+                'INSERT INTO stocks (symbol, company_name, sector, market_cap, is_gsm_asm) VALUES (?, ?, ?, ?, ?) ON CONFLICT (symbol) DO NOTHING',
+                [liveData.symbol, liveData.company_name, liveData.sector, liveData.market_cap, false]
               );
+              const stockId = ins.insertId;
+              if (stockId) {
+                stock = { id: stockId, symbol: liveData.symbol, company_name: liveData.company_name, sector: liveData.sector, market_cap: liveData.market_cap, is_gsm_asm: 0 };
+                const f = liveData.fundamentals;
+                await pool.query(
+                  'INSERT INTO stock_fundamentals (stock_id, promoter_holding, promoter_holding_trend, debt_to_equity, earnings_growth_yoy, earnings_growth_qoq, avg_daily_delivery_pct) VALUES (?, ?, ?, ?, ?, ?, ?)',
+                  [stockId, f.promoter_holding, f.promoter_holding_trend, f.debt_to_equity, f.earnings_growth_yoy, f.earnings_growth_qoq, f.avg_daily_delivery_pct]
+                );
+                const ind = liveData.indicators;
+                await pool.query(
+                  'INSERT INTO stock_indicators (stock_id, timestamp, rsi, macd, macd_signal, ema20, ema50, ema200, atr, adx, obv, volume_trend, support_level, resistance_level) VALUES (?, NOW(), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+                  [stockId, ind.rsi, ind.macd, ind.macd_signal, ind.ema20, ind.ema50, ind.ema200, ind.atr, ind.adx, ind.obv, ind.volume_trend, ind.support_level, ind.resistance_level]
+                );
+                for (const h of (liveData.candles || [])) {
+                  await pool.query(
+                    'INSERT INTO stock_prices (stock_id, timestamp, open, high, low, close, volume) VALUES (?, ?, ?, ?, ?, ?, ?)',
+                    [stockId, new Date(h.timestamp), h.open, h.high, h.low, h.close, h.volume]
+                  );
+                }
+                const score = computeStockScore({ symbol: liveData.symbol }, f, ind, { close: liveData.currentPrice });
+                await pool.query(`
+                  INSERT INTO stock_scores (stock_id, timestamp, trend_score, momentum_score, volume_score, risk_score, final_score, risk_level, entry_price, stop_loss, target1, target2, risk_reward_ratio, suggestion_label, suggestion_reason)
+                  VALUES (?, NOW(), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                `, [
+                  stockId, score.trendScore, score.momentumScore, score.volumeScore, score.riskScore, score.finalScore,
+                  score.riskLevel, score.entryPrice, score.stopLoss, score.target1, score.target2,
+                  score.riskRewardRatio, score.suggestionLabel, score.suggestionReason
+                ]);
+                dbStocks.push(stock);
+              }
+            } catch (e) {
+              console.warn(`[SCANNER] Insert skip for ${liveData.symbol}:`, e.message);
             }
-
-            const score = computeStockScore({ symbol: liveData.symbol }, f, ind, { close: liveData.currentPrice });
-            await pool.query(`
-              INSERT INTO stock_scores (stock_id, timestamp, trend_score, momentum_score, volume_score, risk_score, final_score, risk_level, entry_price, stop_loss, target1, target2, risk_reward_ratio, suggestion_label, suggestion_reason)
-              VALUES (?, NOW(), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            `, [
-              stockId, score.trendScore, score.momentumScore, score.volumeScore, score.riskScore, score.finalScore,
-              score.riskLevel, score.entryPrice, score.stopLoss, score.target1, score.target2,
-              score.riskRewardRatio, score.suggestionLabel, score.suggestionReason
-            ]);
-
-            dbStocks.push(stock);
           } else {
-            // Update latest price & indicators
-            const [prices] = await pool.query('SELECT * FROM stock_prices WHERE stock_id = ? ORDER BY timestamp DESC LIMIT 1', [stock.id]);
-            const [fundamentals] = await pool.query('SELECT * FROM stock_fundamentals WHERE stock_id = ?', [stock.id]);
-            const [indicators] = await pool.query('SELECT * FROM stock_indicators WHERE stock_id = ?', [stock.id]);
+            const lastP = priceMap.get(stock.id);
+            const fund = fundMap.get(stock.id);
+            const ind = indMap.get(stock.id);
 
-            if (prices.length > 0 && fundamentals.length > 0 && indicators.length > 0) {
-              const lastP = prices[0];
-              const newClose = liveData.currentPrice;
-              const newHigh = Math.max(Number(lastP.high), newClose);
-              const newLow = Math.min(Number(lastP.low), newClose);
+            if (lastP && fund && ind) {
+              const newClose = Number(liveData.currentPrice);
+              const newHigh = Math.max(Number(lastP.high || 0), newClose);
+              const newLow = Math.min(Number(lastP.low || 0), newClose);
 
-              await pool.query('UPDATE stock_prices SET close = ?, high = ?, low = ? WHERE id = ?', [newClose, newHigh, newLow, lastP.id]);
-
-              const score = computeStockScore(stock, fundamentals[0], liveData.indicators || indicators[0], { close: newClose });
-              await pool.query(`
-                UPDATE stock_scores
-                SET trend_score = ?, momentum_score = ?, volume_score = ?, risk_score = ?, final_score = ?,
-                    risk_level = ?, entry_price = ?, stop_loss = ?, target1 = ?, target2 = ?,
-                    risk_reward_ratio = ?, suggestion_label = ?, suggestion_reason = ?, timestamp = NOW()
-                WHERE stock_id = ?
-              `, [
-                score.trendScore, score.momentumScore, score.volumeScore, score.riskScore, score.finalScore,
-                score.riskLevel, score.entryPrice, score.stopLoss, score.target1, score.target2,
-                score.riskRewardRatio, score.suggestionLabel, score.suggestionReason, stock.id
-              ]);
+              const score = computeStockScore(stock, fund, liveData.indicators || ind, { close: newClose });
 
               const lastState = lastBroadcastState.get(stock.symbol);
               const isChanged = !lastState || lastState.price !== newClose || lastState.score !== score.finalScore;
 
               if (isChanged) {
                 lastBroadcastState.set(stock.symbol, { price: newClose, score: score.finalScore, suggestion: score.suggestionLabel });
-                const entity = formatStockUpdateEntity(stock, fundamentals[0], liveData.indicators || indicators[0], score, { ...lastP, close: newClose, high: newHigh, low: newLow });
+                const entity = formatStockUpdateEntity(stock, fund, liveData.indicators || ind, score, { ...lastP, close: newClose, high: newHigh, low: newLow });
                 changedStocks.push(entity);
+
+                // Asynchronously update DB prices and score for changed stock only
+                pool.query('UPDATE stock_prices SET close = ?, high = ?, low = ? WHERE id = ?', [newClose, newHigh, newLow, lastP.id]).catch(() => {});
+                pool.query(`
+                  UPDATE stock_scores
+                  SET trend_score = ?, momentum_score = ?, volume_score = ?, risk_score = ?, final_score = ?,
+                      risk_level = ?, entry_price = ?, stop_loss = ?, target1 = ?, target2 = ?,
+                      risk_reward_ratio = ?, suggestion_label = ?, suggestion_reason = ?, timestamp = NOW()
+                  WHERE stock_id = ?
+                `, [
+                  score.trendScore, score.momentumScore, score.volumeScore, score.riskScore, score.finalScore,
+                  score.riskLevel, score.entryPrice, score.stopLoss, score.target1, score.target2,
+                  score.riskRewardRatio, score.suggestionLabel, score.suggestionReason, stock.id
+                ]).catch(() => {});
               }
             }
           }
         } else {
-          // Failure handling: circuit breaker backoff
           const prevFails = (failureCounts.get(item.symbol) || 0) + 1;
           failureCounts.set(item.symbol, prevFails);
           if (prevFails >= 3) {
             console.warn(`[CIRCUIT BREAKER] Symbol ${item.symbol} failed 3 consecutive cycles. Backing off for 60s.`);
-            backoffUntil.set(item.symbol, now + 60000); // 60s backoff
+            backoffUntil.set(item.symbol, now + 60000);
           }
         }
       }

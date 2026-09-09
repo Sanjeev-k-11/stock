@@ -107,9 +107,14 @@ async function login(req, res) {
     if (isUsingFallback()) {
       user = memoryStore.users.find(u => u.email === normalizedEmail);
     } else {
-      const pool = getPool();
-      const [rows] = await pool.query('SELECT * FROM users WHERE email = ?', [normalizedEmail]);
-      if (rows.length > 0) user = rows[0];
+      try {
+        const pool = getPool();
+        const [rows] = await pool.query('SELECT * FROM users WHERE email = ?', [normalizedEmail]);
+        if (rows && rows.length > 0) user = rows[0];
+      } catch (dbErr) {
+        console.warn('[AUTH DB WARN] Direct query error, checking fallback store:', dbErr.message);
+        user = memoryStore.users.find(u => u.email === normalizedEmail);
+      }
     }
 
     if (!user) {
@@ -131,7 +136,7 @@ async function login(req, res) {
     });
   } catch (err) {
     console.error('Login error:', err);
-    return res.status(500).json({ success: false, message: 'Internal server error during login.' });
+    return res.status(500).json({ success: false, message: err.message || 'Internal server error during login.' });
   }
 }
 

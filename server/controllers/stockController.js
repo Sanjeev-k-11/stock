@@ -168,49 +168,67 @@ async function getStocks(req, res) {
       } else {
         const pool = getPool();
         
-        // Execute all database queries in parallel
-        const [
-          [stocks],
-          [fundamentals],
-          [indicators],
-          [scores],
-          [prices]
-        ] = await Promise.all([
-          pool.query('SELECT * FROM stocks'),
-          pool.query('SELECT * FROM stock_fundamentals'),
-          pool.query('SELECT * FROM stock_indicators'),
-          pool.query('SELECT * FROM stock_scores'),
-          pool.query(`
-            SELECT DISTINCT ON (stock_id) id, stock_id, timestamp, open, high, low, close, volume 
-            FROM stock_prices 
-            ORDER BY stock_id, timestamp DESC
-          `)
-        ]);
+        try {
+          // Execute all database queries in parallel
+          const [
+            [stocks],
+            [fundamentals],
+            [indicators],
+            [scores],
+            [prices]
+          ] = await Promise.all([
+            pool.query('SELECT * FROM stocks'),
+            pool.query('SELECT * FROM stock_fundamentals'),
+            pool.query('SELECT * FROM stock_indicators'),
+            pool.query('SELECT * FROM stock_scores'),
+            pool.query(`
+              SELECT DISTINCT ON (stock_id) id, stock_id, timestamp, open, high, low, close, volume 
+              FROM stock_prices 
+              ORDER BY stock_id, timestamp DESC
+            `)
+          ]);
 
-        const fundMap = new Map();
-        fundamentals.forEach(f => fundMap.set(f.stock_id, f));
+          const fundMap = new Map();
+          fundamentals.forEach(f => fundMap.set(f.stock_id, f));
 
-        const indMap = new Map();
-        indicators.forEach(i => indMap.set(i.stock_id, i));
+          const indMap = new Map();
+          indicators.forEach(i => indMap.set(i.stock_id, i));
 
-        const scoreMap = new Map();
-        scores.forEach(sc => scoreMap.set(sc.stock_id, sc));
+          const scoreMap = new Map();
+          scores.forEach(sc => scoreMap.set(sc.stock_id, sc));
 
-        const priceMap = new Map();
-        prices.forEach(p => priceMap.set(p.stock_id, p));
+          const priceMap = new Map();
+          prices.forEach(p => priceMap.set(p.stock_id, p));
 
-        stockList = stocks.map(s => {
-          return formatStockEntity(
-            s,
-            fundMap.get(s.id),
-            indMap.get(s.id),
-            scoreMap.get(s.id),
-            priceMap.get(s.id)
-          );
-        });
+          stockList = stocks.map(s => {
+            return formatStockEntity(
+              s,
+              fundMap.get(s.id),
+              indMap.get(s.id),
+              scoreMap.get(s.id),
+              priceMap.get(s.id)
+            );
+          });
 
-        cachedStockList = stockList;
-        lastCacheTime = now;
+          if (stockList.length > 0) {
+            cachedStockList = stockList;
+            lastCacheTime = now;
+          }
+        } catch (dbErr) {
+          console.warn('[GET STOCKS DB WARN] Database query error, using cache/fallback:', dbErr.message);
+          if (cachedStockList && cachedStockList.length > 0) {
+            stockList = cachedStockList;
+          } else {
+            stockList = memoryStore.stocks.map(s => {
+              const f = memoryStore.stock_fundamentals.find(item => item.stock_id === s.id);
+              const ind = memoryStore.stock_indicators.find(item => item.stock_id === s.id);
+              const sc = memoryStore.stock_scores.find(item => item.stock_id === s.id);
+              const prices = memoryStore.stock_prices.filter(item => item.stock_id === s.id);
+              const latestP = prices.length > 0 ? prices[prices.length - 1] : null;
+              return formatStockEntity(s, f, ind, sc, latestP);
+            });
+          }
+        }
       }
     }
 
