@@ -2,7 +2,7 @@ require('dotenv').config();
 const http = require('http');
 const express = require('express');
 const cors = require('cors');
-const { initMySQL } = require('./config/db');
+const { initDB } = require('./config/db');
 const { initSocket } = require('./services/socketService');
 const { startLiveScanner } = require('./services/liveScanner');
 const { generalLimiter } = require('./middleware/rateLimiter');
@@ -59,7 +59,7 @@ app.use((err, req, res, next) => {
 
 // Bootstrap Server with WebSockets
 async function startServer() {
-  await initMySQL();
+  await initDB();
   initSocket(httpServer);
   startLiveScanner(12000); // 12-second live streaming cycle
 

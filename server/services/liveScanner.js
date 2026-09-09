@@ -280,11 +280,11 @@ async function runLiveScanCycle() {
 
         if (curHigh >= target1) {
           const pnl = Number((((target1 - entry) / entry) * 100).toFixed(2));
-          await pool.query('UPDATE paper_trades SET status = "target_hit", exit_price = ?, exit_time = NOW(), pnl_percent = ? WHERE id = ?', [target1, pnl, trade.id]);
+          await pool.query("UPDATE paper_trades SET status = 'target_hit', exit_price = ?, exit_time = NOW(), pnl_percent = ? WHERE id = ?", [target1, pnl, trade.id]);
           broadcastTradeUpdate({ tradeId: trade.id, symbol: trade.symbol, status: 'target_hit', exitPrice: target1, pnlPercent: pnl });
         } else if (curLow <= stopLoss) {
           const pnl = Number((((stopLoss - entry) / entry) * 100).toFixed(2));
-          await pool.query('UPDATE paper_trades SET status = "sl_hit", exit_price = ?, exit_time = NOW(), pnl_percent = ? WHERE id = ?', [stopLoss, pnl, trade.id]);
+          await pool.query("UPDATE paper_trades SET status = 'sl_hit', exit_price = ?, exit_time = NOW(), pnl_percent = ?", [stopLoss, pnl, trade.id]);
           broadcastTradeUpdate({ tradeId: trade.id, symbol: trade.symbol, status: 'sl_hit', exitPrice: stopLoss, pnlPercent: pnl });
         }
       }
