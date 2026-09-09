@@ -59,10 +59,7 @@ app.use((err, req, res, next) => {
 
 // Bootstrap Server with WebSockets
 async function startServer() {
-  await initDB();
-  initSocket(httpServer);
-  startLiveScanner(12000); // 12-second live streaming cycle
-
+  // 1. Start HTTP Server immediately so Render health check passes instantly
   httpServer.listen(PORT, () => {
     console.log(`====================================================`);
     console.log(`🚀 StockSense Backend Server running on port ${PORT}`);
@@ -71,6 +68,17 @@ async function startServer() {
     console.log(`📊 Health:      http://localhost:${PORT}/api/health`);
     console.log(`====================================================`);
   });
+
+  // 2. Initialize Socket.io broadcaster
+  initSocket(httpServer);
+
+  // 3. Connect to Database and start Live Scanner in background
+  try {
+    await initDB();
+    startLiveScanner(12000); // 12-second live streaming cycle
+  } catch (err) {
+    console.error('[SERVER BOOTSTRAP ERROR]', err);
+  }
 }
 
 startServer();
