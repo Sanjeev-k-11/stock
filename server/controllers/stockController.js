@@ -437,7 +437,10 @@ async function getStockDetail(req, res) {
       }));
     } else {
       const pool = getPool();
-      let [stocks] = await pool.query('SELECT * FROM stocks WHERE symbol = ? OR id = ?', [cleanSym, cleanSym]);
+      const isNumericId = /^\d+$/.test(cleanSym);
+      let [stocks] = isNumericId
+        ? await pool.query('SELECT * FROM stocks WHERE id = ? OR symbol = ?', [parseInt(cleanSym, 10), cleanSym])
+        : await pool.query('SELECT * FROM stocks WHERE symbol = ?', [cleanSym]);
       
       const live = await getLiveStockData({ symbol: cleanSym });
       let stockId;

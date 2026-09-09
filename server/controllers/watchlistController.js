@@ -108,10 +108,19 @@ async function removeFromWatchlist(req, res) {
     }
 
     const pool = getPool();
-    await pool.query(
-      'DELETE FROM watchlists WHERE user_id = ? AND (stock_id = ? OR id = ?)',
-      [userId, stockId, stockId]
-    );
+    const isNum = /^\d+$/.test(stockId);
+    if (isNum) {
+      const numId = parseInt(stockId, 10);
+      await pool.query(
+        'DELETE FROM watchlists WHERE user_id = ? AND (stock_id = ? OR id = ?)',
+        [userId, numId, numId]
+      );
+    } else {
+      const [sRows] = await pool.query('SELECT id FROM stocks WHERE symbol = ?', [String(stockId).toUpperCase()]);
+      if (sRows.length > 0) {
+        await pool.query('DELETE FROM watchlists WHERE user_id = ? AND stock_id = ?', [userId, sRows[0].id]);
+      }
+    }
 
     return res.json({ success: true, message: 'Removed from watchlist.' });
   } catch (err) {

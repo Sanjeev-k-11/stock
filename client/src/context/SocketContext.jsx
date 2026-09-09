@@ -5,6 +5,7 @@ const SocketContext = createContext(null);
 
 export function SocketProvider({ children }) {
   const [isConnected, setIsConnected] = useState(false);
+  const [isMarketOpen, setIsMarketOpen] = useState(true);
   const [lastHeartbeat, setLastHeartbeat] = useState(null);
   const [secondsAgo, setSecondsAgo] = useState(0);
   const [activeSubscribersCount, setActiveSubscribersCount] = useState(0);
@@ -51,6 +52,9 @@ export function SocketProvider({ children }) {
     socket.on('heartbeat', (data) => {
       setLastHeartbeat(Date.now());
       setSecondsAgo(0);
+      if (typeof data?.isMarketOpen === 'boolean') {
+        setIsMarketOpen(data.isMarketOpen);
+      }
       if (data?.connectedClients) {
         setActiveSubscribersCount(data.connectedClients);
       }
@@ -114,6 +118,7 @@ export function SocketProvider({ children }) {
       value={{
         socket: socketRef.current,
         isConnected,
+        isMarketOpen,
         lastHeartbeat,
         secondsAgo,
         activeSubscribersCount,

@@ -295,12 +295,14 @@ async function runLiveScanCycle() {
       broadcastStockUpdates(changedStocks);
     }
 
-    // 2. Broadcast heartbeat
+    // 2. Broadcast heartbeat (always sends status and market state)
     const cycleDuration = Date.now() - startTime;
     broadcastHeartbeat({
+      isMarketOpen: isMarketHours(),
       trackedCount: NSE_SYMBOLS.length,
       changedCount: changedStocks.length,
-      cycleDurationMs: cycleDuration
+      cycleDurationMs: cycleDuration,
+      timestamp: new Date().toISOString()
     });
 
   } catch (err) {
@@ -312,16 +314,14 @@ function startLiveScanner(intervalMs = 12000) {
   if (isScannerRunning) return;
   isScannerRunning = true;
 
-  console.log(`[LIVE SCANNER] Starting high-frequency live WebSocket market stream (Interval: ${intervalMs / 1000}s)...`);
+  console.log(`[LIVE SCANNER] Starting 24/7 live WebSocket market broadcaster (Interval: ${intervalMs / 1000}s)...`);
 
   // Run initial cycle immediately
   runLiveScanCycle();
 
-  // Schedule fast periodic cycles
+  // Run continuous scanner and heartbeat broadcast so WebSocket never pauses
   scannerIntervalTimer = setInterval(() => {
-    if (isMarketHours()) {
-      runLiveScanCycle();
-    }
+    runLiveScanCycle();
   }, intervalMs);
 }
 

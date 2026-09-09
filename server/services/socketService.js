@@ -38,6 +38,13 @@ function initSocket(httpServer) {
     // Default join room for all live market updates
     socket.join('live-stocks');
 
+    // Send immediate initial heartbeat so client knows it is connected instantly
+    socket.emit('heartbeat', {
+      isMarketOpen: true,
+      timestamp: new Date().toISOString(),
+      connectedClients: io.engine.clientsCount || 1
+    });
+
     // Subscribe to specific stock symbols (e.g. for Compare page or Stock Detail page)
     socket.on('subscribe-symbols', (symbols) => {
       if (Array.isArray(symbols)) {
