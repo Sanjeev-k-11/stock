@@ -37,7 +37,7 @@ async function signup(req, res) {
     }
 
     const normalizedEmail = email.toLowerCase().trim();
-    const salt = await bcrypt.genSalt(10);
+    const salt = await bcrypt.genSalt(8);
     const passwordHash = await bcrypt.hash(password, salt);
 
     if (isUsingFallback()) {

@@ -129,6 +129,11 @@ function formatStockEntity(stock, fundamentals, indicators, score, latestPrice) 
   };
 }
 
+// In-Memory Stock Universe Cache for Ultra-Fast Sub-50ms Response Times
+let cachedStockList = null;
+let lastCacheTime = 0;
+const CACHE_TTL_MS = 6000; // 6-second in-memory cache
+
 // 1. Get All Stocks for Scanner Dashboard
 async function getStocks(req, res) {
   try {
@@ -157,27 +162,56 @@ async function getStocks(req, res) {
         return formatStockEntity(s, f, ind, sc, latestP);
       });
     } else {
-      const pool = getPool();
-      const [stocks] = await pool.query('SELECT * FROM stocks');
-      const [fundamentals] = await pool.query('SELECT * FROM stock_fundamentals');
-      const [indicators] = await pool.query('SELECT * FROM stock_indicators');
-      const [scores] = await pool.query('SELECT * FROM stock_scores');
-      
-      // Get latest price for each stock
-      const [prices] = await pool.query(`
-        SELECT p1.* FROM stock_prices p1
-        INNER JOIN (
-          SELECT stock_id, MAX(timestamp) as max_time FROM stock_prices GROUP BY stock_id
-        ) p2 ON p1.stock_id = p2.stock_id AND p1.timestamp = p2.max_time
-      `);
+      const now = Date.now();
+      if (cachedStockList && (now - lastCacheTime) < CACHE_TTL_MS) {
+        stockList = cachedStockList;
+      } else {
+        const pool = getPool();
+        
+        // Execute all database queries in parallel
+        const [
+          [stocks],
+          [fundamentals],
+          [indicators],
+          [scores],
+          [prices]
+        ] = await Promise.all([
+          pool.query('SELECT * FROM stocks'),
+          pool.query('SELECT * FROM stock_fundamentals'),
+          pool.query('SELECT * FROM stock_indicators'),
+          pool.query('SELECT * FROM stock_scores'),
+          pool.query(`
+            SELECT DISTINCT ON (stock_id) id, stock_id, timestamp, open, high, low, close, volume 
+            FROM stock_prices 
+            ORDER BY stock_id, timestamp DESC
+          `)
+        ]);
 
-      stockList = stocks.map(s => {
-        const f = fundamentals.find(item => item.stock_id === s.id);
-        const ind = indicators.find(item => item.stock_id === s.id);
-        const sc = scores.find(item => item.stock_id === s.id);
-        const latestP = prices.find(item => item.stock_id === s.id);
-        return formatStockEntity(s, f, ind, sc, latestP);
-      });
+        const fundMap = new Map();
+        fundamentals.forEach(f => fundMap.set(f.stock_id, f));
+
+        const indMap = new Map();
+        indicators.forEach(i => indMap.set(i.stock_id, i));
+
+        const scoreMap = new Map();
+        scores.forEach(sc => scoreMap.set(sc.stock_id, sc));
+
+        const priceMap = new Map();
+        prices.forEach(p => priceMap.set(p.stock_id, p));
+
+        stockList = stocks.map(s => {
+          return formatStockEntity(
+            s,
+            fundMap.get(s.id),
+            indMap.get(s.id),
+            scoreMap.get(s.id),
+            priceMap.get(s.id)
+          );
+        });
+
+        cachedStockList = stockList;
+        lastCacheTime = now;
+      }
     }
 
     // Apply Filters
